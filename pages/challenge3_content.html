@@ -83,14 +83,24 @@ pose.onResults(results => {
 // -------- Start camera --------
 async function startCamera() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({video:true});
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     video.srcObject = stream;
-    video.onloadedmetadata = () => {
-      video.play();
-      function loop(){ pose.send({image: video}); requestAnimationFrame(loop); }
-      loop();
-    };
-  } catch(e){ console.error("Camera error", e); alert("Camera access denied."); }
+
+    const camera = new Camera(video, {
+      onFrame: async () => {
+        await pose.send({ image: video });
+      },
+      width: 640,
+      height: 480
+    });
+
+    camera.start();
+
+  } catch (e) {
+    console.error("Camera error:", e);
+    alert("Camera access denied or not supported.");
+  }
+}
 }
 
 // -------- Start challenge --------
@@ -120,4 +130,5 @@ document.getElementById("screenshotBtn").addEventListener("click", () => {
 
 </body>
 </html>
+
 
