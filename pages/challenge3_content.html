@@ -4,161 +4,117 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI-Powered Yoga Pose Challenge</title>
-<script src="https://cdn.tailwindcss.com"></script>
-
-<!-- MediaPipe Pose -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.5/drawing_utils.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { font-family: sans-serif; background: #f0fdf4; display: flex; flex-direction: column; align-items: center; padding: 20px;}
+video, canvas { border: 2px solid green; border-radius: 10px; }
+.pose-photo { max-width: 200px; border: 2px solid #006400; border-radius: 10px; margin-bottom: 10px;}
+</style>
 </head>
+<body>
 
-<body class="bg-white min-h-screen p-6">
-
-<div class="max-w-5xl mx-auto bg-white shadow-xl rounded-2xl p-6 border-2 border-green-600">
-
-<h1 class="text-3xl font-bold text-center mb-6 text-green-700">
-AI-Powered Yoga Pose Challenge
-</h1>
+<h1 class="text-3xl font-bold text-green-700 mb-4">AI-Powered Yoga Pose Challenge</h1>
 
 <div class="text-center mb-4">
 <h2 class="text-xl font-semibold text-green-800">Pose to Copy:</h2>
 <p id="currentPoseName" class="text-2xl font-bold text-green-600">Click Start</p>
+<img id="posePhoto" class="pose-photo" src="" alt="Reference Pose">
 </div>
 
-<!-- Video + Canvas -->
-<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-
-<!-- Live Camera Video -->
-<div class="bg-green-50 p-4 rounded-xl text-center border border-green-200">
-<h3 class="font-semibold mb-2 text-green-700">Your Camera</h3>
-<video id="video" autoplay playsinline muted width="640" height="480" class="mx-auto rounded-xl shadow-md border border-green-400"></video>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+<div class="text-center">
+<h3 class="font-semibold text-green-700 mb-2">Your Camera</h3>
+<video id="video" autoplay playsinline muted width="640" height="480"></video>
 </div>
 
-<!-- Overlay Canvas -->
-<div class="bg-green-100 p-4 rounded-xl text-center border border-green-200">
-<h3 class="font-semibold mb-2 text-green-700">Pose Detection + Score</h3>
-<canvas id="overlay" width="640" height="480" class="mx-auto rounded-xl shadow-md border border-green-400"></canvas>
+<div class="text-center">
+<h3 class="font-semibold text-green-700 mb-2">Pose Detection + Score</h3>
+<canvas id="overlay" width="640" height="480"></canvas>
+<p id="scoreDisplay" class="text-xl font-bold text-green-700 mt-2">Score: -</p>
+</div>
 </div>
 
-</div>
-
-<div class="text-center mb-6">
-<p class="text-3xl font-bold text-green-700" id="scoreDisplay">Score: -</p>
-</div>
-
-<div class="flex justify-center gap-4 flex-wrap mb-6">
-<button id="startBtn" class="bg-green-600 text-white px-6 py-2 rounded-xl hover:bg-green-700">
-Start Pose
-</button>
-
-<button onclick="captureScreenshot()" class="bg-green-500 text-white px-6 py-2 rounded-xl hover:bg-green-600">
-Take Screenshot
-</button>
-</div>
-
+<div class="flex gap-4 mb-6">
+<button id="startBtn" class="bg-green-600 text-white px-6 py-2 rounded-xl hover:bg-green-700">Start Pose</button>
+<button id="screenshotBtn" class="bg-green-500 text-white px-6 py-2 rounded-xl hover:bg-green-600">Take Screenshot</button>
 </div>
 
 <script>
-// -------- REFERENCE POSES (Placeholder) --------
+// -------- Local reference poses --------
 const referencePoses = [
-  { name:"Mountain Pose", landmarks: [] },
-  { name:"Tree Pose", landmarks: [] },
-  { name:"Downward Dog", landmarks: [] },
-  { name:"Warrior I", landmarks: [] },
-  { name:"Child Pose", landmarks: [] }
+  { name: "Mountain Pose", photo: "assets/images/mountainpose.jpg", landmarks: [] },
+  { name: "Tree Pose", photo: "assets/images/treepose.jpg", landmarks: [] },
+  { name: "Downward-Facing Dog", photo: "assets/images/downwardfacingdog.jpg", landmarks: [] },
+  { name: "Warrior I", photo: "assets/images/warriori.jpg", landmarks: [] },
+  { name: "Warrior II", photo: "assets/images/warriorii.jpg", landmarks: [] }
 ];
 
-// -------- GLOBAL STATE --------
 let currentReference = null;
-let videoElement = document.getElementById("video");
-let canvasElement = document.getElementById("overlay");
-let ctx = canvasElement.getContext("2d");
 
-// -------- MEDIA PIPE SETUP --------
-const poseDetector = new Pose({
+// DOM elements
+const video = document.getElementById("video");
+const canvas = document.getElementById("overlay");
+const ctx = canvas.getContext("2d");
+const scoreDisplay = document.getElementById("scoreDisplay");
+const posePhoto = document.getElementById("posePhoto");
+
+// -------- MediaPipe setup --------
+const pose = new Pose({
   locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/${file}`
 });
-poseDetector.setOptions({ modelComplexity: 1, smoothLandmarks: true });
-poseDetector.onResults(onPoseResults);
+pose.setOptions({ modelComplexity: 1, smoothLandmarks: true });
+pose.onResults(results => {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(results.poseLandmarks){
+    drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {color:'#006400', lineWidth:2});
+    drawLandmarks(ctx, results.poseLandmarks, {color:'#008000', lineWidth:1});
+  }
+  // Placeholder score for testing
+  scoreDisplay.innerText = "Score: " + Math.floor(Math.random()*101);
+});
 
-// -------- START CAMERA & CHALLENGE --------
+// -------- Start camera and frame loop --------
 async function startCamera() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    videoElement.srcObject = stream;
-    await videoElement.play();
-    requestAnimationFrame(processFrame);
+    video.srcObject = stream;
   } catch (err) {
     console.error("Camera error:", err);
   }
 }
 
-function startChallenge() {
-  const index = Math.floor(Math.random() * referencePoses.length);
+video.onloadedmetadata = () => {
+  video.play();
+  function loop(){ pose.send({image: video}); requestAnimationFrame(loop); }
+  loop();
+};
+
+// -------- Start challenge --------
+document.getElementById("startBtn").addEventListener("click", () => {
+  const index = Math.floor(Math.random()*referencePoses.length);
   currentReference = referencePoses[index];
   document.getElementById("currentPoseName").innerText = currentReference.name;
+  posePhoto.src = currentReference.photo;
   startCamera();
-}
+});
 
-// -------- FRAME LOOP --------
-async function processFrame() {
-  await poseDetector.send({ image: videoElement });
-  requestAnimationFrame(processFrame);
-}
-
-// -------- POSE DETECTION CALLBACK --------
-function onPoseResults(results) {
-  canvasElement.width = videoElement.videoWidth;
-  canvasElement.height = videoElement.videoHeight;
-  ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-  if (results.poseLandmarks) {
-    drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {color:'#006400', lineWidth:2});
-    drawLandmarks(ctx, results.poseLandmarks, {color:'#008000', lineWidth:1});
-
-    const score = computePoseScore(results.poseLandmarks, currentReference.landmarks);
-    document.getElementById("scoreDisplay").innerText = "Score: " + score.toFixed(1);
-
-    ctx.fillStyle="rgba(0,100,0,0.6)";
-    ctx.font="24px Arial";
-    ctx.fillText("Score: "+score.toFixed(1), 10, 30);
-  }
-}
-
-// -------- SIMPLE SCORING FUNCTION --------
-function computePoseScore(studentLandmarks, refLandmarks) {
-  if (!refLandmarks || refLandmarks.length === 0) return 0;
-  let totalDiff = 0;
-  const n = Math.min(studentLandmarks.length, refLandmarks.length);
-  for (let i=0; i<n; i++){
-    totalDiff += Math.abs(studentLandmarks[i].x - refLandmarks[i].x)
-               + Math.abs(studentLandmarks[i].y - refLandmarks[i].y);
-  }
-  return Math.max(0, 100 - (totalDiff*100));
-}
-
-// -------- SCREENSHOT --------
-function captureScreenshot() {
+// -------- Screenshot --------
+document.getElementById("screenshotBtn").addEventListener("click", () => {
   const tempCanvas = document.createElement("canvas");
-  const w = videoElement.videoWidth;
-  const h = videoElement.videoHeight;
-  tempCanvas.width = w;
-  tempCanvas.height = h;
+  tempCanvas.width = video.videoWidth;
+  tempCanvas.height = video.videoHeight;
   const tempCtx = tempCanvas.getContext("2d");
-
-  tempCtx.drawImage(videoElement, 0, 0, w, h);
-  tempCtx.drawImage(canvasElement, 0, 0, w, h);
-
+  tempCtx.drawImage(video, 0, 0);
+  tempCtx.drawImage(canvas, 0, 0);
   const dataUrl = tempCanvas.toDataURL("image/png");
   const a = document.createElement("a");
   a.href = dataUrl;
   a.download = "yoga_pose_capture.png";
   a.click();
-}
-
-// -------- BUTTON LISTENER --------
-document.getElementById("startBtn").addEventListener("click", startChallenge);
-
+});
 </script>
+
 </body>
 </html>
-
